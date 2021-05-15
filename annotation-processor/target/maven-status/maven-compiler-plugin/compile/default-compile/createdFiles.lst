@@ -1,0 +1,6 @@
+com/zhimzhou/process/AnnotationProcessorHider.class
+com/zhimzhou/process/AnnotationProcessorHider$MyAnnotationProcessor.class
+com/zhimzhou/process/AutoBODOConverterProcessor.class
+META-INF/services/javax.annotation.processing.Processor
+com/zhimzhou/annotation/AutoBODOConverter.class
+com/zhimzhou/Main.class
