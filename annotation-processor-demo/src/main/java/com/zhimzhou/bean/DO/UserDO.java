@@ -1,6 +1,13 @@
 package com.zhimzhou.bean.DO;
 
-public class UserDO {
+import java.io.Serializable;
+
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class UserDO implements Serializable {
 
 	private Long id;
 
@@ -11,5 +18,9 @@ public class UserDO {
 	private Long create;
 
 	private Long update;
+
+	public String b(int a) {
+		return "c";
+	}
 
 }

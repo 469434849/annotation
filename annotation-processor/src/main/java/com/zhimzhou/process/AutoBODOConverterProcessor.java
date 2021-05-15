@@ -3,6 +3,7 @@ package com.zhimzhou.process;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -18,10 +19,13 @@ import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.MirroredTypeException;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
@@ -46,7 +50,7 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 	/**
 	 * 元素相关的辅助类
 	 */
-	private Elements elements;
+	private Elements elementUtils;
 	/**
 	 * 元素相关的辅助类
 	 */
@@ -82,7 +86,7 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 	@Override
 	public synchronized void init(ProcessingEnvironment processingEnv) {
 		super.init(processingEnv);
-		elements = processingEnv.getElementUtils();
+		elementUtils = processingEnv.getElementUtils();
 		messager = processingEnv.getMessager();
 		filer = processingEnv.getFiler();
 		types = processingEnv.getTypeUtils();
@@ -102,17 +106,56 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 	@Override
 	public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
 		//TypeElement 表示 class or interface
-		for (TypeElement te : annotations) {
-			//Element 表示 package, class, or method
-			Set<? extends Element> elements = roundEnv.getElementsAnnotatedWith(te);
-			elements.stream()
-							.filter(TypeElement.class::isInstance)
-							.map(TypeElement.class::cast)
-							.map(TypeElement::getQualifiedName)
-							.map(name -> "2222Class " + name + " is annotated with " + te.getQualifiedName())
-							.forEach(System.out::println);
+		//te 是注解 AutoBODOConverter
+		for (TypeElement annotationTe : annotations) {
+			//Element 表示 package, class, or method,
+			//elements 这里表示所有加了 AutoBODOConverter 的类
+			Set<? extends Element> elements = roundEnv.getElementsAnnotatedWith(annotationTe);
+			//			elements.stream()
+			//							.filter(TypeElement.class::isInstance)
+			//							.map(TypeElement.class::cast)
+			//							.map(TypeElement::getQualifiedName)
+			//							.map(name -> "2222Class " + name + " is annotated with " + annotationTe.getQualifiedName())
+			//							.forEach(System.out::println);
+			for (Element element : elements) {
+				AutoBODOConverter bodo = element.getAnnotation(AutoBODOConverter.class);
+				String generatedClassName = bodo.generatedClassName();
+				String generatedFilePackageName = bodo.generatedFilePackageName();
+				String targetClassQualifiedName = "";
+				System.out.println(annotationTe.getQualifiedName());
+				try {
+					// 该目标类已经被编译
+					Class<?> targetClass = bodo.targetClass();
+					targetClassQualifiedName = targetClass.getCanonicalName();
+				} catch (MirroredTypeException mte) {
+					//该目标类未被编译
+					DeclaredType classTypeMirror = (DeclaredType) mte.getTypeMirror();
+					TypeElement classTypeElement = (TypeElement) classTypeMirror.asElement();
+					targetClassQualifiedName = classTypeElement.getQualifiedName().toString();
+				}
+				System.out.println("targetClassQualifiedName:" + targetClassQualifiedName);
+				System.out.println("generatedClassName:" + generatedClassName);
+				System.out.println("generatedFilePackageName:" + generatedFilePackageName);
+				TypeElement targetClassTE = elementUtils.getTypeElement(targetClassQualifiedName);
+				List<? extends Element> targetClassTEEnclosedElements = targetClassTE.getEnclosedElements();
+				for (Element e : targetClassTEEnclosedElements) {
+					ElementKind kind = e.getKind();
+					if (kind == ElementKind.FIELD) {
+						String fieldName = e.getSimpleName().toString();
+						String getMethod = "get" + Utils.firstLetterName(fieldName);
+						String setMethod = "set" + Utils.firstLetterName(fieldName);
+					}
+					//todo
+					System.out.println("e:" + e);
+				}
 
-			this.generateCode(this.elements, this.filer, te.getQualifiedName().toString());
+			}
+
+			//			elements.stream()
+			//							.filter(TypeElement.class::isInstance)
+			//							.map(TypeElement.class::cast)
+			//							.map(TypeElement::getQualifiedName)
+			//							.forEach(name -> this.generateCode(name.toString(), ""));
 
 		}
 		//		try {
@@ -126,18 +169,13 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 		return true;
 	}
 
-	/**
-	 * @param elements           元素处理工具
-	 * @param filer              生成源代码文件工具
-	 * @param qualifiedClassName 全类名
-	 * @throws IOException
-	 */
-	public void generateCode(Elements elements, Filer filer, String qualifiedClassName) {
+	public void generateCode(String qualifiedClassName, String targetQualifiedClassName) {
 		System.out.println("begin1111:");
-		TypeElement superClassName = elements.getTypeElement(qualifiedClassName);
+		TypeElement superClassName = elementUtils.getTypeElement(qualifiedClassName);
+		elementUtils.getPackageOf(superClassName);
 		String factoryClassName = superClassName.getSimpleName() + CONVERTER_SUFFIX;
 		String qualifiedFactoryClassName = qualifiedClassName + CONVERTER_SUFFIX;
-		PackageElement pkg = elements.getPackageOf(superClassName);
+		PackageElement pkg = elementUtils.getPackageOf(superClassName);
 		String packageName = pkg.isUnnamed() ? null : pkg.getQualifiedName().toString();
 
 		MethodSpec.Builder method = MethodSpec.methodBuilder("create")
@@ -168,7 +206,7 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 
 		// Write file
 		try {
-			JavaFile.builder(packageName, typeSpec).build().writeTo(filer);
+			//			JavaFile.builder(packageName, typeSpec).build().writeTo(filer);
 			JavaFile.builder(packageName, typeSpec).build().writeTo(System.out);
 
 		} catch (IOException e) {
@@ -176,6 +214,81 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 		}
 
 	}
+
+	//校验注解添加类的信息
+	//	private void checkValidClass(AutoBODOConverterAnnotatedClass item) {
+	//		// Cast to TypeElement, has more type specific methods
+	//		TypeElement classElement = item.getMAnnotatedClassElement();
+	//		// Check if it's a public class
+	//		if (!classElement.getModifiers().contains(Modifier.PUBLIC)) {
+	//			error(classElement, "The class %s is not public.",
+	//							classElement.getQualifiedName().toString());
+	//		}
+	//
+	//		// Check if it's an abstract class
+	//		if (classElement.getModifiers().contains(Modifier.ABSTRACT)) {
+	//			error(classElement,
+	//							"The class %s is abstract. You can't annotate abstract classes with @%"
+	//							, Factory.class.getSimpleName());
+	//		}
+	//
+	//		// Check inheritance: Class must be child class as specified in @Factory.type();
+	//		TypeElement superClassElement = mElementUtils.getTypeElement(item.getMQualifiedSuperClassName());
+	//		if (superClassElement.getKind() == ElementKind.INTERFACE) {
+	//			// Check interface implemented
+	//			if (!classElement.getInterfaces().contains(superClassElement.asType())) {
+	//				error(classElement,
+	//								"The class %s annotated with @%s must implement the interface %s",
+	//								classElement.getQualifiedName().toString(), Factory.class.getSimpleName(),
+	//								item.getMQualifiedSuperClassName());
+	//			}
+	//		} else {
+	//			// Check subclassing
+	//			TypeElement currentClass = classElement;
+	//			while (true) {
+	//				/**
+	//				 * getSuperclass()
+	//				 * Returns the direct superclass of this type element.
+	//				 * If this type element represents an interface or the class java.lang.Object,
+	//				 * then a NoType with kind NONE is returned.
+	//				 */
+	//				TypeMirror superClassType = currentClass.getSuperclass();
+	//
+	//				if (superClassType.getKind() == TypeKind.NONE) {
+	//					// Basis class (java.lang.Object) reached, so exit
+	//					error(classElement,
+	//									"The class %s annotated with @%s must inherit from %s",
+	//									classElement.getQualifiedName().toString(), Factory.class.getSimpleName(),
+	//									item.getMQualifiedSuperClassName());
+	//				}
+	//
+	//				if (superClassType.toString().equals(item.getMQualifiedSuperClassName())) {
+	//					// Required super class found
+	//					break;
+	//				}
+	//
+	//				// Moving up in inheritance tree
+	//				currentClass = (TypeElement) mTypeUtils.asElement(superClassType);
+	//			}
+	//		}
+	//
+	//		// Check if an empty public constructor is given
+	//		for (Element enclosed : classElement.getEnclosedElements()) {
+	//			if (enclosed.getKind() == ElementKind.CONSTRUCTOR) {
+	//				ExecutableElement constructorElement = (ExecutableElement) enclosed;
+	//				if (constructorElement.getParameters().size() == 0 &&
+	//								constructorElement.getModifiers().contains(Modifier.PUBLIC)) {
+	//					// Found an empty constructor
+	//					return;
+	//				}
+	//			}
+	//		}
+	//
+	//		// No empty constructor found
+	//		error(classElement,
+	//						"The class %s must provide an public empty default constructor",
+	//						classElement.getQualifiedName().toString());
+	//	}
 
 	private void error(Element e, String msg, Object... args) {
 		messager.printMessage(Diagnostic.Kind.ERROR, String.format(msg, args), e);

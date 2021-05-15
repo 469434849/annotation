@@ -1,5 +1,6 @@
 package com.zhimzhou.bean.BO;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -11,8 +12,8 @@ import lombok.Setter;
 
 @Getter
 @Setter
-@AutoBODOConverter(UserDO.class)
-public class UserBO {
+@AutoBODOConverter(targetClass = UserDO.class, generatedFilePackageName = "com.zhimzhou.bean.converter", generatedClassName = "UserBODOConverter")
+public class UserBO implements Serializable {
 
 	private Long id;
 
@@ -23,4 +24,8 @@ public class UserBO {
 	private LocalDateTime create;
 
 	private LocalDate update;
+
+	public void a() {
+		System.out.println(1);
+	}
 }
