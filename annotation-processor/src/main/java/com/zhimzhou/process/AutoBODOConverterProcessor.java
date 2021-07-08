@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Completion;
@@ -22,7 +23,6 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
-import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.MirroredTypeException;
@@ -133,6 +133,11 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 					TypeElement classTypeElement = (TypeElement) classTypeMirror.asElement();
 					targetClassQualifiedName = classTypeElement.getQualifiedName().toString();
 				}
+
+				element.asType();
+
+				String currentQualifiedName = element.asType().toString();
+				System.out.println("currentQualifiedName:" + currentQualifiedName);
 				System.out.println("targetClassQualifiedName:" + targetClassQualifiedName);
 				System.out.println("generatedClassName:" + generatedClassName);
 				System.out.println("generatedFilePackageName:" + generatedFilePackageName);
@@ -144,18 +149,29 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 						String fieldName = e.getSimpleName().toString();
 						String getMethod = "get" + Utils.firstLetterName(fieldName);
 						String setMethod = "set" + Utils.firstLetterName(fieldName);
+						System.out.println(getMethod);
+						System.out.println(setMethod);
 					}
-					//todo
-					System.out.println("e:" + e);
+					System.out.println("target e:" + e);
 				}
 
-			}
+				List<? extends Element> currentClosedElements = element.getEnclosedElements();
 
-			//			elements.stream()
-			//							.filter(TypeElement.class::isInstance)
-			//							.map(TypeElement.class::cast)
-			//							.map(TypeElement::getQualifiedName)
-			//							.forEach(name -> this.generateCode(name.toString(), ""));
+				for (Element e : currentClosedElements) {
+					ElementKind kind = e.getKind();
+					if (kind == ElementKind.FIELD) {
+						String fieldName = e.getSimpleName().toString();
+						String getMethod = "get" + Utils.firstLetterName(fieldName);
+						String setMethod = "set" + Utils.firstLetterName(fieldName);
+						System.out.println(getMethod);
+						System.out.println(setMethod);
+					}
+					System.out.println("current e:" + e);
+				}
+
+				generateCode(currentQualifiedName, targetClassQualifiedName, generatedClassName, generatedFilePackageName);
+
+			}
 
 		}
 		//		try {
@@ -169,45 +185,57 @@ public class AutoBODOConverterProcessor extends AbstractProcessor {
 		return true;
 	}
 
-	public void generateCode(String qualifiedClassName, String targetQualifiedClassName) {
-		System.out.println("begin1111:");
-		TypeElement superClassName = elementUtils.getTypeElement(qualifiedClassName);
-		elementUtils.getPackageOf(superClassName);
-		String factoryClassName = superClassName.getSimpleName() + CONVERTER_SUFFIX;
-		String qualifiedFactoryClassName = qualifiedClassName + CONVERTER_SUFFIX;
-		PackageElement pkg = elementUtils.getPackageOf(superClassName);
-		String packageName = pkg.isUnnamed() ? null : pkg.getQualifiedName().toString();
+	public void generateCode(String aQualifiedClassName, String bQualifiedClassName, String generatedClassName, String generatedFilePackageName) {
+		System.out.println(aQualifiedClassName);
+		System.out.println(bQualifiedClassName);
+		System.out.println(generatedFilePackageName);
+		TypeElement aE = elementUtils.getTypeElement(aQualifiedClassName);
+		TypeElement bE = elementUtils.getTypeElement(bQualifiedClassName);
+		List<? extends Element> aees = aE.getEnclosedElements();
+		List<? extends Element> bees = bE.getEnclosedElements();
+		if (aees.size() != bees.size()) {
+			throw new IllegalStateException(aQualifiedClassName + "\t and " + bQualifiedClassName + "  attributes count are not equals");
+		}
 
-		MethodSpec.Builder method = MethodSpec.methodBuilder("create")
-						.addModifiers(Modifier.PUBLIC)
-						.addParameter(String.class, "id")
-						.returns(TypeName.get(superClassName.asType()));
+		Set<String> aFields = aees.stream().filter(e -> e.getKind().equals(ElementKind.FIELD)).map(e -> e.getSimpleName().toString()).collect(Collectors.toSet());
+		Set<String> bFields = bees.stream().filter(e -> e.getKind().equals(ElementKind.FIELD)).map(e -> e.getSimpleName().toString()).collect(Collectors.toSet());
+		if (!aFields.containsAll(bFields)) {
+			throw new IllegalStateException(aQualifiedClassName + "\t and " + bQualifiedClassName + " has not equal attribute");
+		}
 
-		// check if id is null
-		method.beginControlFlow("if (id == null)")
-						.addStatement("throw new IllegalArgumentException($S)", "id is null!")
+		MethodSpec.Builder toMethod = MethodSpec.methodBuilder("to")
+						.addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+						.addParameter(TypeName.get(aE.asType()), "data")
+						.returns(TypeName.get(bE.asType()));
+
+		toMethod.beginControlFlow("if (data == null)")
+						.addStatement("return null")
+						.endControlFlow();
+		toMethod.addStatement("$L instance = new $L()", bE.getSimpleName().toString(), bE.getSimpleName().toString())
+						.addStatement("return instance");
+
+		MethodSpec.Builder fromMethod = MethodSpec.methodBuilder("from")
+						.addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+						.addParameter(TypeName.get(bE.asType()), "data")
+						.returns(TypeName.get(aE.asType()));
+
+		fromMethod.beginControlFlow("if (data == null)")
+						.addStatement("return null")
 						.endControlFlow();
 
-		// Generate items map
-
-		//		for (FactoryAnnotatedClass item : itemsMap.values()) {
-		//			method.beginControlFlow("if ($S.equals(id))", item.getMId())
-		//							.addStatement("return new $L()", item.getMAnnotatedClassElement().getQualifiedName().toString())
-		//							.endControlFlow();
-		//		}
-
-		method.addStatement("throw new IllegalArgumentException($S + id)", "Unknown id = ");
+		fromMethod.addStatement("return new $L()", aE.getSimpleName().toString());
 
 		TypeSpec typeSpec = TypeSpec
-						.classBuilder(factoryClassName)
+						.classBuilder(generatedClassName)
 						.addModifiers(Modifier.PUBLIC)
-						.addMethod(method.build())
+						.addMethod(toMethod.build())
+						.addMethod(fromMethod.build())
 						.build();
 
 		// Write file
 		try {
-			//			JavaFile.builder(packageName, typeSpec).build().writeTo(filer);
-			JavaFile.builder(packageName, typeSpec).build().writeTo(System.out);
+			JavaFile.builder(generatedFilePackageName, typeSpec).build().writeTo(filer);
+			//			JavaFile.builder(generatedFilePackageName, typeSpec).build().writeTo(System.out);
 
 		} catch (IOException e) {
 			e.printStackTrace();
